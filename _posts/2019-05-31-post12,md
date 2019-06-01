@@ -1,0 +1,82 @@
+---
+layout: post
+title: Remove vertex de-duplication
+image: /img/hello_world.jpeg
+---
+## Environment
+- AgensGraph v2.0 release
+- CentOS 7 (python 2.7)
+
+## Situation
+- I found a vertex duplicate. 
+- Duplicated vertices are exactly the same.
+- I want to leave one and erase the rest.
+
+#### case
+
+````
+agens=# MATCH (a:person) WHERE a.name = 'jhs' RETURN a;
+              a
+------------------------------
+ person[4.517]{"name": "jhs"}
+ person[4.518]{"name": "jhs"}
+ person[4.519]{"name": "jhs"}
+ person[4.520]{"name": "jhs"}
+ person[4.521]{"name": "jhs"}
+ person[4.522]{"name": "jhs"}
+ person[4.523]{"name": "jhs"}
+ person[4.524]{"name": "jhs"}
+ person[4.525]{"name": "jhs"}
+ person[4.526]{"name": "jhs"}
+ person[4.527]{"name": "jhs"}
+ person[4.528]{"name": "jhs"}
+ person[4.529]{"name": "jhs"}
+ person[4.530]{"name": "jhs"}
+(14 rows)
+
+agens=# MATCH (a:person)-[r]->(b:person) WHERE a.name = 'jhs' RETURN a,r,b;
+              a               |              r              |                b
+------------------------------+-----------------------------+---------------------------------
+ person[4.517]{"name": "jhs"} | knows[11.15][4.517,4.546]{} | person[4.546]{"name": "hsjeon"}
+ person[4.518]{"name": "jhs"} | knows[11.16][4.518,4.546]{} | person[4.546]{"name": "hsjeon"}
+ person[4.519]{"name": "jhs"} | knows[11.17][4.519,4.546]{} | person[4.546]{"name": "hsjeon"}
+ person[4.520]{"name": "jhs"} | knows[11.18][4.520,4.546]{} | person[4.546]{"name": "hsjeon"}
+ person[4.521]{"name": "jhs"} | knows[11.19][4.521,4.546]{} | person[4.546]{"name": "hsjeon"}
+ person[4.522]{"name": "jhs"} | knows[11.20][4.522,4.546]{} | person[4.546]{"name": "hsjeon"}
+ person[4.523]{"name": "jhs"} | knows[11.21][4.523,4.546]{} | person[4.546]{"name": "hsjeon"}
+ person[4.524]{"name": "jhs"} | knows[11.22][4.524,4.546]{} | person[4.546]{"name": "hsjeon"}
+ person[4.525]{"name": "jhs"} | knows[11.23][4.525,4.546]{} | person[4.546]{"name": "hsjeon"}
+ person[4.526]{"name": "jhs"} | knows[11.24][4.526,4.546]{} | person[4.546]{"name": "hsjeon"}
+ person[4.527]{"name": "jhs"} | knows[11.25][4.527,4.546]{} | person[4.546]{"name": "hsjeon"}
+ person[4.528]{"name": "jhs"} | knows[11.26][4.528,4.546]{} | person[4.546]{"name": "hsjeon"}
+ person[4.529]{"name": "jhs"} | knows[11.27][4.529,4.546]{} | person[4.546]{"name": "hsjeon"}
+ person[4.530]{"name": "jhs"} | knows[11.28][4.530,4.546]{} | person[4.546]{"name": "hsjeon"}
+(14 rows)
+````
+- In this case, one 'jhs' vertex must be associated with the 'hsjeon' vertex, and the 'jhs' vertex is created as a duplicate.
+
+#### solution 
+
+````
+(version 2.1.1)
+-- Subtracting the where condition will eliminate all duplicates by comparing all the vertices.
+MATCH(a:person)
+WHERE a.name = 'jhs'
+WITH properties(a) as props, count(*) as cnt, min(id(a)::text::"numeric") as min_gid
+MATCH(b:person)
+WHERE properties(b) = props
+AND cnt >= 2
+AND id(b) <> min_gid
+DETACH DELETE a;
+
+(version 1.3~2.0)
+MATCH (a:person)
+WHERE a.name = 'jhs'
+WITH properties(a) AS props, count(*) AS cnt
+MATCH (b:person) WHERE b.name = 'jhs' AND to_jsonb(cnt) >= 2
+WITH props, cnt, id(b) AS id LIMIT 1
+MATCH (c:person)
+WHERE properties(c) = props
+AND id(c) <> id
+DETACH DELETE c;
+````
